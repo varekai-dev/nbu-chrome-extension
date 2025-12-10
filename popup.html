@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NBU Coins - Auto Add</title>
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <div class="container">
     <div class="header">
@@ -16,14 +18,9 @@
     <div class="content">
       <!-- Текстове поле для фільтру -->
       <div class="input-group">
-        <label for="filterInput" class="input-label">Шукати товари за назвою:</label>
-        <input 
-          type="text" 
-          id="filterInput" 
-          class="text-input" 
-          placeholder="Наприклад: монета, срібло, золото..."
-          aria-label="Текст для пошуку товарів"
-        >
+        <label for="filterInput" class="input-label">Назва товару для відстеження:</label>
+        <input type="text" id="filterInput" class="text-input" placeholder="Введіть точну назву товару"
+          aria-label="Назва товару для відстеження">
       </div>
 
       <!-- Toggle switch -->
@@ -40,14 +37,11 @@
         </div>
       </div>
 
-      <!-- Статистика -->
-      <div id="statsSection" class="stats-section hidden">
-        <div class="stats-card">
-          <div class="stats-icon">📊</div>
-          <div class="stats-content">
-            <div class="stats-title">Додано товарів:</div>
-            <div id="addedCount" class="stats-count">0</div>
-          </div>
+      <!-- Статус відстеження -->
+      <div id="trackingStatus" class="tracking-status hidden">
+        <div class="status-card">
+          <div id="statusIcon" class="status-icon">🔍</div>
+          <div id="statusDescription" class="status-description">Шукаю товар...</div>
         </div>
       </div>
 
@@ -64,7 +58,7 @@
 
     <div class="footer">
       <p class="footer-text">
-        ⚠️ Сторінка буде оновлюватись кожну секунду<br>
+        Відстежує один товар за точною назвою<br>
         Працює тільки на coins.bank.gov.ua
       </p>
     </div>
@@ -72,4 +66,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

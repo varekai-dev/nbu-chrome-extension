@@ -2,9 +2,9 @@
 
 let monitoringInterval = null;
 let refreshInterval = null;
-let addedProductsCount = 0;
 let isEnabled = false;
 let currentFilterText = "";
+let isWaitingForConfirmation = false;
 
 // Ініціалізація при завантаженні сторінки
 const initializeMonitoring = () => {
@@ -42,14 +42,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   }
 });
 
-// Слухаємо повідомлення від popup
+// Слухаємо повідомлення від popup (якщо потрібно)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "getStats") {
-    sendResponse({
-      addedCount: addedProductsCount,
-      isEnabled: isEnabled,
-    });
-  }
+  // Можна додати обробку повідомлень тут
   return true;
 });
 
@@ -86,15 +81,28 @@ const startMonitoring = () => {
     clearInterval(monitoringInterval);
   }
 
-  // Запускаємо першу перевірку одразу
-  checkAndAddProducts();
+  // Чекаємо поки товари з'являться на сторінці
+  const waitForProducts = () => {
+    const products = document.querySelectorAll(".product");
+    if (products.length > 0) {
+      // Товари знайдені, починаємо моніторинг
+      console.log("Сторінка завантажена, знайдено товарів:", products.length);
+      checkProduct();
 
-  // Потім кожні 2 секунди
-  monitoringInterval = setInterval(() => {
-    if (isEnabled) {
-      checkAndAddProducts();
+      // Потім кожні 500мс
+      monitoringInterval = setInterval(() => {
+        if (isEnabled) {
+          checkProduct();
+        }
+      }, 500);
+    } else {
+      // Товари ще не з'явилися, чекаємо ще трохи
+      console.log("Очікування завантаження товарів...");
+      setTimeout(waitForProducts, 300);
     }
-  }, 2000);
+  };
+
+  waitForProducts();
 };
 
 /**
@@ -105,82 +113,110 @@ const stopMonitoring = () => {
     clearInterval(monitoringInterval);
     monitoringInterval = null;
   }
-  addedProductsCount = 0;
 };
 
 /**
- * Перевіряє та додає товари в кошик
+ * Перевіряє стан товару та виконує необхідні дії
  */
-const checkAndAddProducts = () => {
+const checkProduct = () => {
   try {
-    // Якщо немає фільтру - нічого не робимо
     if (!currentFilterText || currentFilterText.trim() === "") {
       return;
     }
 
-    const filter = currentFilterText.toLowerCase().trim();
+    const searchText = currentFilterText.trim();
     const products = document.querySelectorAll(".product");
 
-    let addedInThisCycle = 0;
-
+    // Шукаємо товар за точною назвою
+    let targetProduct = null;
     products.forEach((product) => {
-      try {
-        // Знаходимо елемент з назвою товару
-        const modelElement = product.querySelector(".model_product");
-        if (!modelElement) return;
+      const modelElement = product.querySelector(".model_product");
+      if (!modelElement) return;
 
-        // Отримуємо текст назви товару
-        const productName = modelElement.textContent.toLowerCase().trim();
+      const productName = modelElement.textContent.trim();
 
-        // Перевіряємо чи співпадає з фільтром (case-insensitive, partial match)
-        if (!productName.includes(filter)) return;
-
-        // Знаходимо кнопку додавання в кошик
-        const button = product.querySelector(".main-basked-icon.add2cart");
-        if (!button) return;
-
-        // Перевіряємо чи товар вже додано (чи є класи clicked та yellow)
-        if (
-          button.classList.contains("clicked") &&
-          button.classList.contains("yellow")
-        ) {
-          return; // Пропускаємо вже додані товари
-        }
-
-        // Клікаємо на кнопку
-        button.click();
-        addedInThisCycle++;
-        addedProductsCount++;
-      } catch (error) {
-        console.error("Помилка при обробці товару:", error);
+      // Точна відповідність назви
+      if (productName === searchText) {
+        targetProduct = product;
       }
     });
 
-    // Якщо додали товари, відправляємо статистику
-    if (addedInThisCycle > 0) {
-      notifyPopup();
+    // Товар не знайдено - сторінка буде оновлена через 1 секунду
+    if (!targetProduct) {
+      console.log("Товар не знайдено. Очікування refresh...");
+      notifyPopup({
+        status: "searching",
+        message: "Шукаю товар на сторінці...",
+      });
+      return;
     }
+
+    // Товар знайдено
+    console.log("Товар знайдено:", searchText);
+
+    // Знаходимо кнопку
+    const button = targetProduct.querySelector(".main-basked-icon");
+    if (!button) {
+      console.log("Кнопка не знайдена");
+      notifyPopup({
+        status: "error",
+        message: "Товар знайдено, але кнопка відсутня",
+      });
+      return;
+    }
+
+    // СПОЧАТКУ зупиняємо все (перед кліком!)
+    console.log("Товар знайдено, зупиняю моніторинг і refresh...");
+    isEnabled = false;
+    stopMonitoring();
+    stopPageRefresh();
+
+    // Тепер клікаємо на кнопку
+    console.log("Клікаю на кнопку додавання...");
+    button.click();
+
+    // Оновлюємо storage і відправляємо повідомлення
+    chrome.storage.local.set({ toggleEnabled: false }, () => {
+      notifyPopup({
+        status: "completed",
+        message: "Клік виконано! Товар додається до кошика.",
+      });
+    });
   } catch (error) {
-    console.error("Помилка при перевірці товарів:", error);
+    console.error("Помилка при перевірці товару:", error);
   }
 };
 
 /**
- * Відправляє оновлену статистику до popup
+ * Відправляє оновлення статусу до popup
  */
-const notifyPopup = () => {
+const notifyPopup = (data) => {
   try {
     chrome.runtime.sendMessage({
-      action: "statsUpdate",
-      addedCount: addedProductsCount,
+      action: "statusUpdate",
+      status: data.status,
+      message: data.message,
     });
   } catch (error) {
     // Popup може бути закритий - це нормально
   }
 };
 
-// Ініціалізуємо при завантаженні
-initializeMonitoring();
+// Ініціалізуємо при завантаженні - чекаємо поки DOM буде готовий
+if (document.readyState === "loading") {
+  // DOM ще завантажується
+  document.addEventListener("DOMContentLoaded", () => {
+    // Додаємо затримку після завантаження DOM для завантаження товарів
+    setTimeout(() => {
+      initializeMonitoring();
+    }, 1000);
+  });
+} else {
+  // DOM вже завантажений
+  setTimeout(() => {
+    initializeMonitoring();
+  }, 1000);
+}
 
 // Cleanup при вивантаженні сторінки
 window.addEventListener("beforeunload", () => {

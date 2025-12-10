@@ -226,6 +226,35 @@ body {
   animation: pulse 0.3s ease;
 }
 
+/* Tracking Status */
+.tracking-status {
+  margin-top: 16px;
+  padding: 0;
+  animation: slideDown 0.3s ease;
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.status-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.status-description {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+}
+
 /* Status Message */
 .status-message {
   padding: 12px;

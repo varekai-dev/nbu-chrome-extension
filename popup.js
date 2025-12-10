@@ -1,7 +1,5 @@
 // Popup script для управління автоматичним додаванням товарів
 
-let updateStatsInterval = null;
-
 document.addEventListener("DOMContentLoaded", () => {
   const filterInput = document.getElementById("filterInput");
   const autoToggle = document.getElementById("autoToggle");
@@ -39,8 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Слухаємо повідомлення від content script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "statsUpdate") {
-      updateStats(request.addedCount);
+    if (request.action === "statusUpdate") {
+      updateTrackingStatus(request.status, request.message);
     }
   });
 });
@@ -61,7 +59,6 @@ const loadSettings = () => {
     if (data.toggleEnabled) {
       autoToggle.checked = true;
       updateStatusIndicator(true);
-      startStatsUpdate();
     } else {
       autoToggle.checked = false;
       updateStatusIndicator(false);
@@ -120,12 +117,10 @@ const handleToggleChange = (event) => {
     updateStatusIndicator(isEnabled);
 
     if (isEnabled) {
-      showStatus("🚀 Автоматичний режим увімкнено");
-      startStatsUpdate();
+      showStatus("🚀 Розпочато відстеження товару");
     } else {
-      showStatus("⏸️ Автоматичний режим вимкнено");
-      stopStatsUpdate();
-      resetStats();
+      showStatus("⏸️ Відстеження зупинено");
+      hideTrackingStatus();
     }
   });
 };
@@ -145,77 +140,6 @@ const updateStatusIndicator = (isEnabled) => {
     statusIndicator.textContent = "Вимкнено";
     statusIndicator.classList.remove("active");
   }
-};
-
-/**
- * Запускає періодичне оновлення статистики
- */
-const startStatsUpdate = () => {
-  if (updateStatsInterval) {
-    clearInterval(updateStatsInterval);
-  }
-
-  // Оновлюємо статистику кожні 500ms
-  updateStatsInterval = setInterval(() => {
-    requestStats();
-  }, 500);
-
-  // Перша перевірка одразу
-  requestStats();
-};
-
-/**
- * Зупиняє оновлення статистики
- */
-const stopStatsUpdate = () => {
-  if (updateStatsInterval) {
-    clearInterval(updateStatsInterval);
-    updateStatsInterval = null;
-  }
-};
-
-/**
- * Запитує статистику у content script
- */
-const requestStats = () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        { action: "getStats" },
-        (response) => {
-          if (response && response.addedCount !== undefined) {
-            updateStats(response.addedCount);
-          }
-        }
-      );
-    }
-  });
-};
-
-/**
- * Оновлює відображення статистики
- */
-const updateStats = (count) => {
-  const addedCount = document.getElementById("addedCount");
-  addedCount.textContent = count;
-
-  // Додаємо анімацію при зміні
-  addedCount.classList.add("stats-updated");
-  setTimeout(() => {
-    addedCount.classList.remove("stats-updated");
-  }, 300);
-};
-
-/**
- * Скидає статистику
- */
-const resetStats = () => {
-  const addedCount = document.getElementById("addedCount");
-  const statsSection = document.getElementById("statsSection");
-
-  addedCount.textContent = "0";
-  statsSection.classList.add("hidden");
 };
 
 /**
@@ -257,7 +181,45 @@ const showError = (message) => {
   }, 3000);
 };
 
-// Cleanup при закритті popup
-window.addEventListener("beforeunload", () => {
-  stopStatsUpdate();
-});
+/**
+ * Оновлює статус відстеження товару
+ */
+const updateTrackingStatus = (status, message) => {
+  const trackingStatus = document.getElementById("trackingStatus");
+  const statusIcon = document.getElementById("statusIcon");
+  const statusDescription = document.getElementById("statusDescription");
+
+  // Показуємо статус
+  trackingStatus.classList.remove("hidden");
+
+  // Оновлюємо іконку в залежності від статусу
+  const icons = {
+    searching: "🔍",
+    clicked: "👆",
+    waiting: "⏳",
+    completed: "✅",
+    error: "❌",
+  };
+
+  statusIcon.textContent = icons[status] || "🔍";
+  statusDescription.textContent = message;
+
+  // Якщо завдання виконано, вимикаємо toggle та ховаємо статус через 3 секунди
+  if (status === "completed") {
+    const autoToggle = document.getElementById("autoToggle");
+    autoToggle.checked = false;
+    updateStatusIndicator(false);
+
+    setTimeout(() => {
+      hideTrackingStatus();
+    }, 3000);
+  }
+};
+
+/**
+ * Ховає статус відстеження
+ */
+const hideTrackingStatus = () => {
+  const trackingStatus = document.getElementById("trackingStatus");
+  trackingStatus.classList.add("hidden");
+};
