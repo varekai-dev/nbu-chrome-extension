@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Генератор іконок для NBU Extension</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+    p {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .preview {
+      display: flex;
+      gap: 20px;
+      margin: 30px 0;
+      align-items: center;
+    }
+    canvas {
+      border: 2px solid #ddd;
+      border-radius: 8px;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .info {
+      margin-top: 30px;
+      padding: 15px;
+      background: #f0f4ff;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 Генератор іконок NBU Extension</h1>
+    <p>Натисніть на кнопки нижче щоб завантажити іконки для extension</p>
+    
+    <div class="preview">
+      <div>
+        <h3>16x16</h3>
+        <canvas id="canvas16" width="16" height="16"></canvas>
+      </div>
+      <div>
+        <h3>48x48</h3>
+        <canvas id="canvas48" width="48" height="48"></canvas>
+      </div>
+      <div>
+        <h3>128x128</h3>
+        <canvas id="canvas128" width="128" height="128"></canvas>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button onclick="downloadIcon(16)">Завантажити icon16.png</button>
+      <button onclick="downloadIcon(48)">Завантажити icon48.png</button>
+      <button onclick="downloadIcon(128)">Завантажити icon128.png</button>
+      <button onclick="downloadAll()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">Завантажити всі іконки</button>
+    </div>
+
+    <div class="info">
+      <strong>Інструкція:</strong><br>
+      1. Завантажте всі три іконки<br>
+      2. Помістіть їх в папку <code>icons/</code> вашого extension<br>
+      3. Переконайтеся що імена файлів: icon16.png, icon48.png, icon128.png<br>
+      4. Перезавантажте extension в Chrome
+    </div>
+  </div>
+
+  <script>
+    // Функція для малювання іконки
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Градієнтний фон
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      
+      // Малюємо кошик
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = 'white';
+      
+      // Масштабуємо відносно розміру
+      const scale = size / 128;
+      ctx.lineWidth = 6 * scale;
+      
+      // Корзина (трапеція)
+      ctx.beginPath();
+      ctx.moveTo(35 * scale, 50 * scale);
+      ctx.lineTo(45 * scale, 100 * scale);
+      ctx.lineTo(83 * scale, 100 * scale);
+      ctx.lineTo(93 * scale, 50 * scale);
+      ctx.closePath();
+      ctx.stroke();
+      
+      // Ручка
+      ctx.beginPath();
+      ctx.arc(64 * scale, 45 * scale, 25 * scale, Math.PI, 0, false);
+      ctx.stroke();
+      
+      // Колеса
+      ctx.beginPath();
+      ctx.arc(50 * scale, 110 * scale, 5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.arc(78 * scale, 110 * scale, 5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Малюємо іконки при завантаженні
+    drawIcon(document.getElementById('canvas16'), 16);
+    drawIcon(document.getElementById('canvas48'), 48);
+    drawIcon(document.getElementById('canvas128'), 128);
+
+    // Функція для завантаження іконки
+    function downloadIcon(size) {
+      const canvas = document.getElementById(`canvas${size}`);
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    // Завантажити всі іконки
+    function downloadAll() {
+      downloadIcon(16);
+      setTimeout(() => downloadIcon(48), 200);
+      setTimeout(() => downloadIcon(128), 400);
+    }
+  </script>
+</body>
+</html>
+
+

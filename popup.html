@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NBU Coins - Auto Add</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">NBU Coins Auto</h1>
+      <p class="subtitle">Автоматичне додавання товарів</p>
+    </div>
+
+    <div class="content">
+      <!-- Текстове поле для фільтру -->
+      <div class="input-group">
+        <label for="filterInput" class="input-label">Шукати товари за назвою:</label>
+        <input 
+          type="text" 
+          id="filterInput" 
+          class="text-input" 
+          placeholder="Наприклад: монета, срібло, золото..."
+          aria-label="Текст для пошуку товарів"
+        >
+      </div>
+
+      <!-- Toggle switch -->
+      <div class="toggle-group">
+        <div class="toggle-container">
+          <label class="toggle-switch" for="autoToggle">
+            <input type="checkbox" id="autoToggle" aria-label="Увімкнути автоматичний режим">
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="toggle-info">
+            <span class="toggle-label">Автоматичний режим</span>
+            <span id="statusIndicator" class="status-indicator">Вимкнено</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Статистика -->
+      <div id="statsSection" class="stats-section hidden">
+        <div class="stats-card">
+          <div class="stats-icon">📊</div>
+          <div class="stats-content">
+            <div class="stats-title">Додано товарів:</div>
+            <div id="addedCount" class="stats-count">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Повідомлення про статус -->
+      <div id="statusMessage" class="status-message hidden">
+        <p id="statusText"></p>
+      </div>
+
+      <!-- Повідомлення про помилку -->
+      <div id="errorMessage" class="error-message hidden">
+        <p id="errorText"></p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p class="footer-text">
+        ⚠️ Сторінка буде оновлюватись кожну секунду<br>
+        Працює тільки на coins.bank.gov.ua
+      </p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
