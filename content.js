@@ -122,14 +122,18 @@ const checkProduct = () => {
 
     // Шукаємо товар за точною назвою
     let targetProduct = null;
+    // Нормалізуємо пошуковий текст (замінюємо множинні пробіли на один)
+    const normalizedSearchText = searchText.replace(/\s+/g, " ");
+
     products.forEach((product) => {
       const modelElement = product.querySelector(".model_product");
       if (!modelElement) return;
 
-      const productName = modelElement.textContent.trim();
+      // Нормалізуємо текст товару (замінюємо множинні пробіли на один)
+      const productName = modelElement.textContent.trim().replace(/\s+/g, " ");
 
-      // Точна відповідність назви
-      if (productName === searchText) {
+      // Точна відповідність назви після нормалізації пробілів
+      if (productName === normalizedSearchText) {
         targetProduct = product;
       }
     });
