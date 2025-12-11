@@ -49,7 +49,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Запускає автоматичний refresh сторінки кожну секунду
+ * Запускає автоматичний refresh сторінки кожні 1210 мс
  */
 const startPageRefresh = () => {
   if (refreshInterval) {
@@ -60,7 +60,7 @@ const startPageRefresh = () => {
     if (isEnabled) {
       location.reload();
     }
-  }, 1000);
+  }, 1210);
 };
 
 /**
@@ -162,6 +162,19 @@ const checkProduct = () => {
         status: "error",
         message: "Товар знайдено, але кнопка відсутня",
       });
+      return;
+    }
+
+    // Перевіряємо чи кнопка має клас gray
+    if (button.classList.contains("gray")) {
+      console.log(
+        "Товар знайдено, але кнопка недоступна (gray). Очікування..."
+      );
+      notifyPopup({
+        status: "waiting",
+        message: "Товар знайдено! Очікую доступності товару...",
+      });
+      // Продовжуємо моніторинг і refresh - сторінка буде оновлена через 1 секунду
       return;
     }
 
