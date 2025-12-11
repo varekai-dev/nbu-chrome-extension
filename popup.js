@@ -4,8 +4,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const filterInput = document.getElementById("filterInput");
   const autoToggle = document.getElementById("autoToggle");
   const statusIndicator = document.getElementById("statusIndicator");
-  const addedCount = document.getElementById("addedCount");
-  const statsSection = document.getElementById("statsSection");
   const statusMessage = document.getElementById("statusMessage");
   const statusText = document.getElementById("statusText");
   const errorMessage = document.getElementById("errorMessage");
@@ -130,12 +128,10 @@ const handleToggleChange = (event) => {
  */
 const updateStatusIndicator = (isEnabled) => {
   const statusIndicator = document.getElementById("statusIndicator");
-  const statsSection = document.getElementById("statsSection");
 
   if (isEnabled) {
     statusIndicator.textContent = "Увімкнено";
     statusIndicator.classList.add("active");
-    statsSection.classList.remove("hidden");
   } else {
     statusIndicator.textContent = "Вимкнено";
     statusIndicator.classList.remove("active");

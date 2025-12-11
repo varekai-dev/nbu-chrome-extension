@@ -4,7 +4,6 @@ let monitoringInterval = null;
 let refreshInterval = null;
 let isEnabled = false;
 let currentFilterText = "";
-let isWaitingForConfirmation = false;
 
 // Ініціалізація при завантаженні сторінки
 const initializeMonitoring = () => {
@@ -40,12 +39,6 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       currentFilterText = changes.filterText.newValue || "";
     }
   }
-});
-
-// Слухаємо повідомлення від popup (якщо потрібно)
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Можна додати обробку повідомлень тут
-  return true;
 });
 
 /**
