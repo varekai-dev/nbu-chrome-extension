@@ -165,11 +165,12 @@ const checkProduct = () => {
       return;
     }
 
-    // Перевіряємо чи кнопка має клас gray
-    if (button.classList.contains("gray")) {
-      console.log(
-        "Товар знайдено, але кнопка недоступна (gray). Очікування..."
-      );
+    // Перевіряємо чи кнопка недоступна
+    if (
+      button.classList.contains("gray") ||
+      button.classList.contains("clicked")
+    ) {
+      console.log("Товар знайдено, але кнопка недоступна. Очікування...");
       notifyPopup({
         status: "waiting",
         message: "Товар знайдено! Очікую доступності товару...",
