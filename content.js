@@ -74,28 +74,16 @@ const startMonitoring = () => {
     clearInterval(monitoringInterval);
   }
 
-  // Чекаємо поки товари з'являться на сторінці
-  const waitForProducts = () => {
-    const products = document.querySelectorAll(".product");
-    if (products.length > 0) {
-      // Товари знайдені, починаємо моніторинг
-      console.log("Сторінка завантажена, знайдено товарів:", products.length);
+  // Починаємо моніторинг одразу, без очікування
+  console.log("Запуск моніторингу товарів");
+  checkProduct();
+
+  // Перевіряємо кожні 500мс
+  monitoringInterval = setInterval(() => {
+    if (isEnabled) {
       checkProduct();
-
-      // Потім кожні 500мс
-      monitoringInterval = setInterval(() => {
-        if (isEnabled) {
-          checkProduct();
-        }
-      }, 500);
-    } else {
-      // Товари ще не з'явилися, чекаємо ще трохи
-      console.log("Очікування завантаження товарів...");
-      setTimeout(waitForProducts, 300);
     }
-  };
-
-  waitForProducts();
+  }, 500);
 };
 
 /**
@@ -216,17 +204,10 @@ const notifyPopup = (data) => {
 // Ініціалізуємо при завантаженні - чекаємо поки DOM буде готовий
 if (document.readyState === "loading") {
   // DOM ще завантажується
-  document.addEventListener("DOMContentLoaded", () => {
-    // Додаємо затримку після завантаження DOM для завантаження товарів
-    setTimeout(() => {
-      initializeMonitoring();
-    }, 1000);
-  });
+  document.addEventListener("DOMContentLoaded", initializeMonitoring);
 } else {
   // DOM вже завантажений
-  setTimeout(() => {
-    initializeMonitoring();
-  }, 1000);
+  initializeMonitoring();
 }
 
 // Cleanup при вивантаженні сторінки
