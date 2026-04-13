@@ -86,6 +86,55 @@ body {
   cursor: not-allowed;
 }
 
+/* Input hint */
+.input-hint {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  margin-top: 5px;
+}
+
+/* Datetime wrapper */
+.datetime-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.datetime-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Clear button */
+.clear-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  color: #888;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.clear-btn:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Toggle Group */
 .toggle-group {
   margin-bottom: 20px;
@@ -180,6 +229,11 @@ body {
 
 .status-indicator.active {
   color: #10b981;
+  font-weight: 600;
+}
+
+.status-indicator.scheduled {
+  color: #f59e0b;
   font-weight: 600;
 }
 

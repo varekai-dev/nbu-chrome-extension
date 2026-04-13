@@ -23,6 +23,25 @@
           aria-label="Назва товару для відстеження">
       </div>
 
+      <!-- Інтервал оновлення сторінки -->
+      <div class="input-group">
+        <label for="refreshIntervalInput" class="input-label">Інтервал оновлення (мс):</label>
+        <input type="number" id="refreshIntervalInput" class="text-input" min="210" max="1210" value="1210"
+          aria-label="Інтервал оновлення сторінки в мілісекундах">
+        <span class="input-hint">від 210 до 1210 мс</span>
+      </div>
+
+      <!-- Запланований час старту -->
+      <div class="input-group">
+        <label for="scheduledTimeInput" class="input-label">Запланований час старту:</label>
+        <div class="datetime-wrapper">
+          <input type="datetime-local" id="scheduledTimeInput" class="text-input datetime-input" step="1"
+            aria-label="Запланований час старту моніторингу">
+          <button id="clearScheduledTime" class="clear-btn" title="Очистити запланований час"
+            aria-label="Очистити запланований час">×</button>
+        </div>
+      </div>
+
       <!-- Toggle switch -->
       <div class="toggle-group">
         <div class="toggle-container">

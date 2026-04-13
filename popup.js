@@ -2,12 +2,10 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   const filterInput = document.getElementById("filterInput");
+  const refreshIntervalInput = document.getElementById("refreshIntervalInput");
+  const scheduledTimeInput = document.getElementById("scheduledTimeInput");
+  const clearScheduledTimeBtn = document.getElementById("clearScheduledTime");
   const autoToggle = document.getElementById("autoToggle");
-  const statusIndicator = document.getElementById("statusIndicator");
-  const statusMessage = document.getElementById("statusMessage");
-  const statusText = document.getElementById("statusText");
-  const errorMessage = document.getElementById("errorMessage");
-  const errorText = document.getElementById("errorText");
 
   // Перевіряємо чи користувач на правильній сторінці
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -18,25 +16,36 @@ document.addEventListener("DOMContentLoaded", () => {
         "Будь ласка, відкрийте сторінку каталогу NBU (coins.bank.gov.ua)"
       );
       filterInput.disabled = true;
+      refreshIntervalInput.disabled = true;
+      scheduledTimeInput.disabled = true;
+      clearScheduledTimeBtn.disabled = true;
       autoToggle.disabled = true;
       return;
     }
 
-    // Завантажуємо збережені налаштування
     loadSettings();
   });
 
-  // Обробник зміни тексту фільтру
   filterInput.addEventListener("input", handleFilterChange);
   filterInput.addEventListener("keydown", handleKeyDown);
-
-  // Обробник зміни toggle
+  refreshIntervalInput.addEventListener("change", handleRefreshIntervalChange);
+  scheduledTimeInput.addEventListener("change", handleScheduledTimeChange);
+  clearScheduledTimeBtn.addEventListener("click", handleClearScheduledTime);
   autoToggle.addEventListener("change", handleToggleChange);
 
   // Слухаємо повідомлення від content script
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "statusUpdate") {
       updateTrackingStatus(request.status, request.message);
+    }
+  });
+
+  // Оновлюємо toggle коли content.js автоматично стартує по scheduled time
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === "local" && changes.toggleEnabled) {
+      const isEnabled = changes.toggleEnabled.newValue;
+      autoToggle.checked = isEnabled;
+      updateStatusIndicator(isEnabled);
     }
   });
 });
@@ -45,23 +54,124 @@ document.addEventListener("DOMContentLoaded", () => {
  * Завантажує збережені налаштування
  */
 const loadSettings = () => {
-  chrome.storage.local.get(["toggleEnabled", "filterText"], (data) => {
-    const filterInput = document.getElementById("filterInput");
-    const autoToggle = document.getElementById("autoToggle");
+  chrome.storage.local.get(
+    ["toggleEnabled", "filterText", "refreshIntervalMs", "scheduledTime"],
+    (data) => {
+      const filterInput = document.getElementById("filterInput");
+      const refreshIntervalInput = document.getElementById("refreshIntervalInput");
+      const scheduledTimeInput = document.getElementById("scheduledTimeInput");
+      const autoToggle = document.getElementById("autoToggle");
 
-    // Встановлюємо збережені значення
-    if (data.filterText) {
-      filterInput.value = data.filterText;
+      if (data.filterText) {
+        filterInput.value = data.filterText;
+      }
+
+      refreshIntervalInput.value = data.refreshIntervalMs || 1210;
+
+      if (data.scheduledTime) {
+        const scheduledDate = new Date(data.scheduledTime);
+        if (scheduledDate <= new Date()) {
+          chrome.storage.local.remove("scheduledTime");
+        } else {
+          scheduledTimeInput.value = data.scheduledTime;
+        }
+      }
+
+      // Toggle увімкнений або є активний scheduled time → показуємо як увімкнений
+      const hasActiveSchedule =
+        data.scheduledTime && new Date(data.scheduledTime) > new Date();
+
+      if (data.toggleEnabled || hasActiveSchedule) {
+        autoToggle.checked = true;
+        updateStatusIndicator(true, data.scheduledTime && !data.toggleEnabled ? data.scheduledTime : null);
+      } else {
+        autoToggle.checked = false;
+        updateStatusIndicator(false);
+      }
     }
+  );
+};
 
-    if (data.toggleEnabled) {
-      autoToggle.checked = true;
-      updateStatusIndicator(true);
-    } else {
-      autoToggle.checked = false;
+/**
+ * Обробник зміни toggle
+ */
+const handleToggleChange = (event) => {
+  const isChecked = event.target.checked;
+  const filterInput = document.getElementById("filterInput");
+  const filterText = filterInput.value.trim();
+
+  if (isChecked && filterText === "") {
+    event.target.checked = false;
+    showError("Спочатку введіть текст для пошуку товарів");
+    filterInput.focus();
+    return;
+  }
+
+  if (!isChecked) {
+    // Вимикаємо — скасовуємо і моніторинг, і scheduled time
+    const scheduledTimeInput = document.getElementById("scheduledTimeInput");
+    scheduledTimeInput.value = "";
+    chrome.storage.local.remove("scheduledTime");
+    chrome.storage.local.set({ toggleEnabled: false }, () => {
       updateStatusIndicator(false);
+      hideTrackingStatus();
+      showStatus("⏸️ Відстеження зупинено");
+    });
+    return;
+  }
+
+  // Вмикаємо — перевіряємо чи є запланований час
+  const scheduledTimeInput = document.getElementById("scheduledTimeInput");
+  const scheduledTimeValue = scheduledTimeInput.value;
+
+  if (scheduledTimeValue) {
+    const scheduledDate = new Date(scheduledTimeValue);
+    if (scheduledDate <= new Date()) {
+      event.target.checked = false;
+      showError("Запланований час вже минув. Оберіть час у майбутньому.");
+      scheduledTimeInput.value = "";
+      chrome.storage.local.remove("scheduledTime");
+      return;
     }
-  });
+    // Зберігаємо час → content.js підхопить і встановить таймер
+    chrome.storage.local.set({ scheduledTime: scheduledTimeValue }, () => {
+      updateStatusIndicator(true, scheduledTimeValue);
+    });
+  } else {
+    // Старт одразу
+    chrome.storage.local.set({ toggleEnabled: true }, () => {
+      updateStatusIndicator(true);
+      showStatus("🚀 Розпочато відстеження товару");
+    });
+  }
+};
+
+/**
+ * Оновлює індикатор статусу
+ * @param {boolean} isEnabled
+ * @param {string|null} scheduledTime — якщо є, показує "Заплановано о HH:MM:SS"
+ */
+const updateStatusIndicator = (isEnabled, scheduledTime = null) => {
+  const statusIndicator = document.getElementById("statusIndicator");
+
+  if (!isEnabled) {
+    statusIndicator.textContent = "Вимкнено";
+    statusIndicator.className = "status-indicator";
+    return;
+  }
+
+  if (scheduledTime) {
+    const timeStr = new Date(scheduledTime).toLocaleTimeString("uk-UA", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    statusIndicator.textContent = `Заплановано о ${timeStr}`;
+    statusIndicator.className = "status-indicator scheduled";
+  } else {
+    statusIndicator.textContent = "Увімкнено";
+    statusIndicator.className = "status-indicator active";
+  }
 };
 
 /**
@@ -69,9 +179,7 @@ const loadSettings = () => {
  */
 const handleFilterChange = (event) => {
   const filterText = event.target.value;
-
-  // Зберігаємо в storage
-  chrome.storage.local.set({ filterText: filterText }, () => {
+  chrome.storage.local.set({ filterText }, () => {
     if (filterText.trim() === "") {
       showStatus("Введіть текст для пошуку товарів");
     } else {
@@ -81,7 +189,7 @@ const handleFilterChange = (event) => {
 };
 
 /**
- * Обробник натискання клавіші для доступності
+ * Обробник Enter у полі фільтру
  */
 const handleKeyDown = (event) => {
   if (event.key === "Enter") {
@@ -95,46 +203,45 @@ const handleKeyDown = (event) => {
 };
 
 /**
- * Обробник зміни toggle
+ * Обробник зміни інтервалу оновлення
  */
-const handleToggleChange = (event) => {
-  const isEnabled = event.target.checked;
-  const filterInput = document.getElementById("filterInput");
-  const filterText = filterInput.value.trim();
-
-  // Перевіряємо чи введено текст
-  if (isEnabled && filterText === "") {
-    event.target.checked = false;
-    showError("Спочатку введіть текст для пошуку товарів");
-    filterInput.focus();
-    return;
-  }
-
-  // Зберігаємо стан в storage
-  chrome.storage.local.set({ toggleEnabled: isEnabled }, () => {
-    updateStatusIndicator(isEnabled);
-
-    if (isEnabled) {
-      showStatus("🚀 Розпочато відстеження товару");
-    } else {
-      showStatus("⏸️ Відстеження зупинено");
-      hideTrackingStatus();
-    }
-  });
+const handleRefreshIntervalChange = (event) => {
+  let value = parseInt(event.target.value, 10);
+  if (isNaN(value)) value = 1210;
+  value = Math.min(1210, Math.max(210, value));
+  event.target.value = value;
+  chrome.storage.local.set({ refreshIntervalMs: value });
 };
 
 /**
- * Оновлює індикатор статусу
+ * Обробник зміни запланованого часу (тільки валідація, без збереження в storage)
  */
-const updateStatusIndicator = (isEnabled) => {
-  const statusIndicator = document.getElementById("statusIndicator");
+const handleScheduledTimeChange = (event) => {
+  const value = event.target.value;
+  if (!value) return;
 
-  if (isEnabled) {
-    statusIndicator.textContent = "Увімкнено";
-    statusIndicator.classList.add("active");
-  } else {
-    statusIndicator.textContent = "Вимкнено";
-    statusIndicator.classList.remove("active");
+  if (new Date(value) <= new Date()) {
+    showError("Запланований час вже минув. Оберіть час у майбутньому.");
+    event.target.value = "";
+  }
+};
+
+/**
+ * Обробник очищення запланованого часу
+ */
+const handleClearScheduledTime = () => {
+  const scheduledTimeInput = document.getElementById("scheduledTimeInput");
+  const autoToggle = document.getElementById("autoToggle");
+  scheduledTimeInput.value = "";
+  chrome.storage.local.remove("scheduledTime");
+  // Якщо toggle увімкнений але лише через scheduled time — вимикаємо
+  if (autoToggle.checked) {
+    chrome.storage.local.get("toggleEnabled", (data) => {
+      if (!data.toggleEnabled) {
+        autoToggle.checked = false;
+        updateStatusIndicator(false);
+      }
+    });
   }
 };
 
@@ -145,7 +252,6 @@ const showStatus = (message) => {
   const statusMessage = document.getElementById("statusMessage");
   const statusText = document.getElementById("statusText");
   const errorMessage = document.getElementById("errorMessage");
-
   statusText.textContent = message;
   statusMessage.classList.remove("hidden");
   errorMessage.classList.add("hidden");
@@ -155,8 +261,7 @@ const showStatus = (message) => {
  * Ховає повідомлення про статус
  */
 const hideStatus = () => {
-  const statusMessage = document.getElementById("statusMessage");
-  statusMessage.classList.add("hidden");
+  document.getElementById("statusMessage").classList.add("hidden");
 };
 
 /**
@@ -166,15 +271,10 @@ const showError = (message) => {
   const errorMessage = document.getElementById("errorMessage");
   const errorText = document.getElementById("errorText");
   const statusMessage = document.getElementById("statusMessage");
-
   errorText.textContent = message;
   errorMessage.classList.remove("hidden");
   statusMessage.classList.add("hidden");
-
-  // Автоматично ховаємо через 3 секунди
-  setTimeout(() => {
-    errorMessage.classList.add("hidden");
-  }, 3000);
+  setTimeout(() => errorMessage.classList.add("hidden"), 3000);
 };
 
 /**
@@ -185,10 +285,8 @@ const updateTrackingStatus = (status, message) => {
   const statusIcon = document.getElementById("statusIcon");
   const statusDescription = document.getElementById("statusDescription");
 
-  // Показуємо статус
   trackingStatus.classList.remove("hidden");
 
-  // Оновлюємо іконку в залежності від статусу
   const icons = {
     searching: "🔍",
     clicked: "👆",
@@ -200,15 +298,11 @@ const updateTrackingStatus = (status, message) => {
   statusIcon.textContent = icons[status] || "🔍";
   statusDescription.textContent = message;
 
-  // Якщо завдання виконано, вимикаємо toggle та ховаємо статус через 3 секунди
   if (status === "completed") {
     const autoToggle = document.getElementById("autoToggle");
     autoToggle.checked = false;
     updateStatusIndicator(false);
-
-    setTimeout(() => {
-      hideTrackingStatus();
-    }, 3000);
+    setTimeout(() => hideTrackingStatus(), 3000);
   }
 };
 
@@ -216,6 +310,5 @@ const updateTrackingStatus = (status, message) => {
  * Ховає статус відстеження
  */
 const hideTrackingStatus = () => {
-  const trackingStatus = document.getElementById("trackingStatus");
-  trackingStatus.classList.add("hidden");
+  document.getElementById("trackingStatus").classList.add("hidden");
 };

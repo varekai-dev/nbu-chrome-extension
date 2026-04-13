@@ -1,20 +1,39 @@
 // Content script з автоматичним моніторингом та фільтрацією товарів
 
-let monitoringInterval = null;
 let refreshInterval = null;
+let scheduleTimeout = null;
 let isEnabled = false;
 let currentFilterText = "";
 
 // Ініціалізація при завантаженні сторінки
 const initializeMonitoring = () => {
-  chrome.storage.local.get(["toggleEnabled", "filterText"], (data) => {
-    if (data.toggleEnabled && data.filterText) {
-      isEnabled = true;
-      currentFilterText = data.filterText;
-      startMonitoring();
-      startPageRefresh();
+  chrome.storage.local.get(
+    ["toggleEnabled", "filterText", "refreshIntervalMs", "scheduledTime"],
+    (data) => {
+      currentFilterText = data.filterText || "";
+      const intervalMs = data.refreshIntervalMs || 1210;
+
+      if (data.toggleEnabled && currentFilterText) {
+        isEnabled = true;
+        checkProduct();
+        startPageRefresh(intervalMs);
+      } else if (data.scheduledTime && !data.toggleEnabled && currentFilterText) {
+        const scheduledDate = new Date(data.scheduledTime);
+        const now = new Date();
+        if (scheduledDate > now) {
+          const delay = scheduledDate - now;
+          scheduleTimeout = setTimeout(() => {
+            scheduleTimeout = null;
+            if (!currentFilterText) return;
+            isEnabled = true;
+            chrome.storage.local.set({ toggleEnabled: true });
+            checkProduct();
+            startPageRefresh(intervalMs);
+          }, delay);
+        }
+      }
     }
-  });
+  );
 };
 
 // Слухаємо зміни в storage
@@ -24,27 +43,63 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       isEnabled = changes.toggleEnabled.newValue;
 
       if (isEnabled) {
-        chrome.storage.local.get(["filterText"], (data) => {
+        chrome.storage.local.get(["filterText", "refreshIntervalMs"], (data) => {
           currentFilterText = data.filterText || "";
-          startMonitoring();
-          startPageRefresh();
+          checkProduct();
+          startPageRefresh(data.refreshIntervalMs || 1210);
         });
       } else {
-        stopMonitoring();
         stopPageRefresh();
+        if (scheduleTimeout) {
+          clearTimeout(scheduleTimeout);
+          scheduleTimeout = null;
+        }
       }
     }
 
     if (changes.filterText) {
       currentFilterText = changes.filterText.newValue || "";
     }
+
+    if (changes.refreshIntervalMs && isEnabled) {
+      stopPageRefresh();
+      startPageRefresh(changes.refreshIntervalMs.newValue || 1210);
+    }
+
+    if (changes.scheduledTime) {
+      if (scheduleTimeout) {
+        clearTimeout(scheduleTimeout);
+        scheduleTimeout = null;
+      }
+
+      const newScheduledTime = changes.scheduledTime.newValue;
+      if (newScheduledTime && !isEnabled) {
+        const scheduledDate = new Date(newScheduledTime);
+        const now = new Date();
+        if (scheduledDate > now) {
+          chrome.storage.local.get(["refreshIntervalMs", "filterText"], (data) => {
+            currentFilterText = data.filterText || "";
+            const intervalMs = data.refreshIntervalMs || 1210;
+            const delay = scheduledDate - now;
+            scheduleTimeout = setTimeout(() => {
+              scheduleTimeout = null;
+              if (!currentFilterText) return;
+              isEnabled = true;
+              chrome.storage.local.set({ toggleEnabled: true });
+              checkProduct();
+              startPageRefresh(intervalMs);
+            }, delay);
+          });
+        }
+      }
+    }
   }
 });
 
 /**
- * Запускає автоматичний refresh сторінки кожні 1210 мс
+ * Запускає автоматичний refresh сторінки
  */
-const startPageRefresh = () => {
+const startPageRefresh = (intervalMs) => {
   if (refreshInterval) {
     clearInterval(refreshInterval);
   }
@@ -53,7 +108,7 @@ const startPageRefresh = () => {
     if (isEnabled) {
       location.reload();
     }
-  }, 1210);
+  }, intervalMs);
 };
 
 /**
@@ -63,36 +118,6 @@ const stopPageRefresh = () => {
   if (refreshInterval) {
     clearInterval(refreshInterval);
     refreshInterval = null;
-  }
-};
-
-/**
- * Запускає моніторинг товарів
- */
-const startMonitoring = () => {
-  if (monitoringInterval) {
-    clearInterval(monitoringInterval);
-  }
-
-  // Починаємо моніторинг одразу, без очікування
-  console.log("Запуск моніторингу товарів");
-  checkProduct();
-
-  // Перевіряємо кожні 500мс
-  monitoringInterval = setInterval(() => {
-    if (isEnabled) {
-      checkProduct();
-    }
-  }, 500);
-};
-
-/**
- * Зупиняє моніторинг товарів
- */
-const stopMonitoring = () => {
-  if (monitoringInterval) {
-    clearInterval(monitoringInterval);
-    monitoringInterval = null;
   }
 };
 
@@ -108,25 +133,20 @@ const checkProduct = () => {
     const searchText = currentFilterText.trim();
     const products = document.querySelectorAll(".product");
 
-    // Шукаємо товар за точною назвою
     let targetProduct = null;
-    // Нормалізуємо пошуковий текст (замінюємо множинні пробіли на один)
     const normalizedSearchText = searchText.replace(/\s+/g, " ");
 
     products.forEach((product) => {
       const modelElement = product.querySelector(".model_product");
       if (!modelElement) return;
 
-      // Нормалізуємо текст товару (замінюємо множинні пробіли на один)
       const productName = modelElement.textContent.trim().replace(/\s+/g, " ");
 
-      // Точна відповідність назви після нормалізації пробілів
       if (productName === normalizedSearchText) {
         targetProduct = product;
       }
     });
 
-    // Товар не знайдено - сторінка буде оновлена через 1 секунду
     if (!targetProduct) {
       console.log("Товар не знайдено. Очікування refresh...");
       notifyPopup({
@@ -136,10 +156,8 @@ const checkProduct = () => {
       return;
     }
 
-    // Товар знайдено
     console.log("Товар знайдено:", searchText);
 
-    // Знаходимо кнопку
     const button = targetProduct.querySelector(".main-basked-icon");
     if (!button) {
       console.log("Кнопка не знайдена");
@@ -150,7 +168,6 @@ const checkProduct = () => {
       return;
     }
 
-    // Перевіряємо чи кнопка недоступна
     if (
       button.classList.contains("gray") ||
       button.classList.contains("clicked")
@@ -160,21 +177,16 @@ const checkProduct = () => {
         status: "waiting",
         message: "Товар знайдено! Очікую доступності товару...",
       });
-      // Продовжуємо моніторинг і refresh - сторінка буде оновлена через 1 секунду
       return;
     }
 
-    // СПОЧАТКУ зупиняємо все (перед кліком!)
-    console.log("Товар знайдено, зупиняю моніторинг і refresh...");
+    console.log("Товар знайдено, зупиняю refresh...");
     isEnabled = false;
-    stopMonitoring();
     stopPageRefresh();
 
-    // Тепер клікаємо на кнопку
     console.log("Клікаю на кнопку додавання...");
     button.click();
 
-    // Оновлюємо storage і відправляємо повідомлення
     chrome.storage.local.set({ toggleEnabled: false }, () => {
       notifyPopup({
         status: "completed",
@@ -203,15 +215,15 @@ const notifyPopup = (data) => {
 
 // Ініціалізуємо при завантаженні - чекаємо поки DOM буде готовий
 if (document.readyState === "loading") {
-  // DOM ще завантажується
   document.addEventListener("DOMContentLoaded", initializeMonitoring);
 } else {
-  // DOM вже завантажений
   initializeMonitoring();
 }
 
 // Cleanup при вивантаженні сторінки
 window.addEventListener("beforeunload", () => {
-  stopMonitoring();
   stopPageRefresh();
+  if (scheduleTimeout) {
+    clearTimeout(scheduleTimeout);
+  }
 });
