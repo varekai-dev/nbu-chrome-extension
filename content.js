@@ -5,6 +5,11 @@ let scheduleTimeout = null;
 let isEnabled = false;
 let currentFilterText = "";
 
+const isCatalogOrMainPage = () => {
+  const { pathname } = window.location;
+  return pathname === "/" || pathname === "" || pathname === "/catalog.html";
+};
+
 // Ініціалізація при завантаженні сторінки
 const initializeMonitoring = () => {
   chrome.storage.local.get(
@@ -13,23 +18,44 @@ const initializeMonitoring = () => {
       currentFilterText = data.filterText || "";
       const intervalMs = data.refreshIntervalMs || 1210;
 
-      if (data.toggleEnabled && currentFilterText) {
-        isEnabled = true;
-        checkProduct();
-        startPageRefresh(intervalMs);
-      } else if (data.scheduledTime && !data.toggleEnabled && currentFilterText) {
-        const scheduledDate = new Date(data.scheduledTime);
-        const now = new Date();
-        if (scheduledDate > now) {
-          const delay = scheduledDate - now;
-          scheduleTimeout = setTimeout(() => {
-            scheduleTimeout = null;
-            if (!currentFilterText) return;
-            isEnabled = true;
-            chrome.storage.local.set({ toggleEnabled: true });
-            checkProduct();
-            startPageRefresh(intervalMs);
-          }, delay);
+      if (isCatalogOrMainPage()) {
+        if (data.toggleEnabled && currentFilterText) {
+          isEnabled = true;
+          checkProduct();
+          startPageRefresh(intervalMs);
+        } else if (data.scheduledTime && !data.toggleEnabled && currentFilterText) {
+          const scheduledDate = new Date(data.scheduledTime);
+          const now = new Date();
+          if (scheduledDate > now) {
+            const delay = scheduledDate - now;
+            scheduleTimeout = setTimeout(() => {
+              scheduleTimeout = null;
+              if (!currentFilterText) return;
+              isEnabled = true;
+              chrome.storage.local.set({ toggleEnabled: true });
+              checkProduct();
+              startPageRefresh(intervalMs);
+            }, delay);
+          }
+        }
+      } else {
+        if (data.toggleEnabled) {
+          isEnabled = true;
+          checkProductPage();
+          startPageRefresh(intervalMs);
+        } else if (data.scheduledTime && !data.toggleEnabled) {
+          const scheduledDate = new Date(data.scheduledTime);
+          const now = new Date();
+          if (scheduledDate > now) {
+            const delay = scheduledDate - now;
+            scheduleTimeout = setTimeout(() => {
+              scheduleTimeout = null;
+              isEnabled = true;
+              chrome.storage.local.set({ toggleEnabled: true });
+              checkProductPage();
+              startPageRefresh(intervalMs);
+            }, delay);
+          }
         }
       }
     }
@@ -43,11 +69,18 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       isEnabled = changes.toggleEnabled.newValue;
 
       if (isEnabled) {
-        chrome.storage.local.get(["filterText", "refreshIntervalMs"], (data) => {
-          currentFilterText = data.filterText || "";
-          checkProduct();
-          startPageRefresh(data.refreshIntervalMs || 1210);
-        });
+        if (isCatalogOrMainPage()) {
+          chrome.storage.local.get(["filterText", "refreshIntervalMs"], (data) => {
+            currentFilterText = data.filterText || "";
+            checkProduct();
+            startPageRefresh(data.refreshIntervalMs || 1210);
+          });
+        } else {
+          chrome.storage.local.get(["refreshIntervalMs"], (data) => {
+            checkProductPage();
+            startPageRefresh(data.refreshIntervalMs || 1210);
+          });
+        }
       } else {
         stopPageRefresh();
         if (scheduleTimeout) {
@@ -81,14 +114,24 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             currentFilterText = data.filterText || "";
             const intervalMs = data.refreshIntervalMs || 1210;
             const delay = scheduledDate - now;
-            scheduleTimeout = setTimeout(() => {
-              scheduleTimeout = null;
-              if (!currentFilterText) return;
-              isEnabled = true;
-              chrome.storage.local.set({ toggleEnabled: true });
-              checkProduct();
-              startPageRefresh(intervalMs);
-            }, delay);
+            if (isCatalogOrMainPage()) {
+              scheduleTimeout = setTimeout(() => {
+                scheduleTimeout = null;
+                if (!currentFilterText) return;
+                isEnabled = true;
+                chrome.storage.local.set({ toggleEnabled: true });
+                checkProduct();
+                startPageRefresh(intervalMs);
+              }, delay);
+            } else {
+              scheduleTimeout = setTimeout(() => {
+                scheduleTimeout = null;
+                isEnabled = true;
+                chrome.storage.local.set({ toggleEnabled: true });
+                checkProductPage();
+                startPageRefresh(intervalMs);
+              }, delay);
+            }
           });
         }
       }
@@ -185,6 +228,38 @@ const checkProduct = () => {
     stopPageRefresh();
 
     console.log("Клікаю на кнопку додавання...");
+    button.click();
+
+    chrome.storage.local.set({ toggleEnabled: false }, () => {
+      notifyPopup({
+        status: "completed",
+        message: "Клік виконано! Товар додається до кошика.",
+      });
+    });
+  } catch (error) {
+    console.error("Помилка при перевірці товару:", error);
+  }
+};
+
+/**
+ * Перевіряє наявність кнопки «Купити» на сторінці товару
+ */
+const checkProductPage = () => {
+  try {
+    const button = document.querySelector("button.btn-primary.buy");
+
+    if (!button) {
+      console.log("Кнопка «Купити» відсутня. Очікування...");
+      notifyPopup({
+        status: "waiting",
+        message: "Очікую появи кнопки «Купити»...",
+      });
+      return;
+    }
+
+    console.log("Кнопка «Купити» знайдена, клікаю...");
+    isEnabled = false;
+    stopPageRefresh();
     button.click();
 
     chrome.storage.local.set({ toggleEnabled: false }, () => {

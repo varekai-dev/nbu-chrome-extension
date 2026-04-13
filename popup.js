@@ -1,5 +1,17 @@
 // Popup script для управління автоматичним додаванням товарів
 
+let pageMode = "catalog"; // "catalog" | "product"
+
+const isCatalogOrMainUrl = (url) => {
+  try {
+    const { hostname, pathname } = new URL(url);
+    if (hostname !== "coins.bank.gov.ua") return false;
+    return pathname === "/" || pathname === "" || pathname === "/catalog.html";
+  } catch {
+    return false;
+  }
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   const filterInput = document.getElementById("filterInput");
   const refreshIntervalInput = document.getElementById("refreshIntervalInput");
@@ -21,6 +33,11 @@ document.addEventListener("DOMContentLoaded", () => {
       clearScheduledTimeBtn.disabled = true;
       autoToggle.disabled = true;
       return;
+    }
+
+    if (!isCatalogOrMainUrl(currentTab.url)) {
+      pageMode = "product";
+      document.getElementById("filterGroup").classList.add("hidden");
     }
 
     loadSettings();
@@ -100,7 +117,7 @@ const handleToggleChange = (event) => {
   const filterInput = document.getElementById("filterInput");
   const filterText = filterInput.value.trim();
 
-  if (isChecked && filterText === "") {
+  if (isChecked && pageMode === "catalog" && filterText === "") {
     event.target.checked = false;
     showError("Спочатку введіть текст для пошуку товарів");
     filterInput.focus();
