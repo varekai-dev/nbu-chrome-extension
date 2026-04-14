@@ -3,8 +3,11 @@
   "name": "NBU Coins - Add All to Cart",
   "description": "Автоматично додає всі товари з каталогу NBU в кошик одним кліком",
   "version": "1.0.8",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
   "host_permissions": ["https://coins.bank.gov.ua/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
