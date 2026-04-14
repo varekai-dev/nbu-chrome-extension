@@ -3,7 +3,10 @@
 let refreshInterval = null;
 let scheduleTimeout = null;
 let isEnabled = false;
-let currentFilterText = "";
+let filterTexts = []; // масив назв товарів
+let persistedStatuses = {}; // name → "clicked" | "not_found" | "searching"
+let isClickingInProgress = false;
+let cancelClicking = false;
 
 const isCatalogOrMainPage = () => {
   const { pathname } = window.location;
@@ -13,27 +16,35 @@ const isCatalogOrMainPage = () => {
 // Ініціалізація при завантаженні сторінки
 const initializeMonitoring = () => {
   chrome.storage.local.get(
-    ["toggleEnabled", "filterText", "refreshIntervalMs", "scheduledTime"],
+    ["toggleEnabled", "filterTexts", "productStatuses", "refreshIntervalMs", "scheduledTime"],
     (data) => {
-      currentFilterText = data.filterText || "";
+      filterTexts = (data.filterTexts || []).filter((t) => t.trim() !== "");
       const intervalMs = data.refreshIntervalMs || 1210;
 
+      // Завантажуємо збережені статуси
+      persistedStatuses = {};
+      if (data.productStatuses) {
+        data.productStatuses.forEach((item) => {
+          persistedStatuses[item.name] = item.status;
+        });
+      }
+
       if (isCatalogOrMainPage()) {
-        if (data.toggleEnabled && currentFilterText) {
+        if (data.toggleEnabled && filterTexts.length > 0) {
           isEnabled = true;
-          checkProduct();
+          checkProducts();
           startPageRefresh(intervalMs);
-        } else if (data.scheduledTime && !data.toggleEnabled && currentFilterText) {
+        } else if (data.scheduledTime && !data.toggleEnabled && filterTexts.length > 0) {
           const scheduledDate = new Date(data.scheduledTime);
           const now = new Date();
           if (scheduledDate > now) {
             const delay = scheduledDate - now;
             scheduleTimeout = setTimeout(() => {
               scheduleTimeout = null;
-              if (!currentFilterText) return;
+              if (filterTexts.length === 0) return;
               isEnabled = true;
               chrome.storage.local.set({ toggleEnabled: true });
-              checkProduct();
+              checkProducts();
               startPageRefresh(intervalMs);
             }, delay);
           }
@@ -68,11 +79,19 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.toggleEnabled) {
       isEnabled = changes.toggleEnabled.newValue;
 
-      if (isEnabled) {
+      if (!isEnabled) {
+        cancelClicking = true;
+        stopPageRefresh();
+        if (scheduleTimeout) {
+          clearTimeout(scheduleTimeout);
+          scheduleTimeout = null;
+        }
+      } else {
+        cancelClicking = false;
         if (isCatalogOrMainPage()) {
-          chrome.storage.local.get(["filterText", "refreshIntervalMs"], (data) => {
-            currentFilterText = data.filterText || "";
-            checkProduct();
+          chrome.storage.local.get(["filterTexts", "refreshIntervalMs"], (data) => {
+            filterTexts = (data.filterTexts || []).filter((t) => t.trim() !== "");
+            checkProducts();
             startPageRefresh(data.refreshIntervalMs || 1210);
           });
         } else {
@@ -81,17 +100,11 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             startPageRefresh(data.refreshIntervalMs || 1210);
           });
         }
-      } else {
-        stopPageRefresh();
-        if (scheduleTimeout) {
-          clearTimeout(scheduleTimeout);
-          scheduleTimeout = null;
-        }
       }
     }
 
-    if (changes.filterText) {
-      currentFilterText = changes.filterText.newValue || "";
+    if (changes.filterTexts) {
+      filterTexts = (changes.filterTexts.newValue || []).filter((t) => t.trim() !== "");
     }
 
     if (changes.refreshIntervalMs && isEnabled) {
@@ -110,23 +123,25 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         const scheduledDate = new Date(newScheduledTime);
         const now = new Date();
         if (scheduledDate > now) {
-          chrome.storage.local.get(["refreshIntervalMs", "filterText"], (data) => {
-            currentFilterText = data.filterText || "";
+          chrome.storage.local.get(["refreshIntervalMs", "filterTexts"], (data) => {
+            filterTexts = (data.filterTexts || []).filter((t) => t.trim() !== "");
             const intervalMs = data.refreshIntervalMs || 1210;
             const delay = scheduledDate - now;
             if (isCatalogOrMainPage()) {
               scheduleTimeout = setTimeout(() => {
                 scheduleTimeout = null;
-                if (!currentFilterText) return;
+                if (filterTexts.length === 0) return;
                 isEnabled = true;
+                cancelClicking = false;
                 chrome.storage.local.set({ toggleEnabled: true });
-                checkProduct();
+                checkProducts();
                 startPageRefresh(intervalMs);
               }, delay);
             } else {
               scheduleTimeout = setTimeout(() => {
                 scheduleTimeout = null;
                 isEnabled = true;
+                cancelClicking = false;
                 chrome.storage.local.set({ toggleEnabled: true });
                 checkProductPage();
                 startPageRefresh(intervalMs);
@@ -148,7 +163,7 @@ const startPageRefresh = (intervalMs) => {
   }
 
   refreshInterval = setInterval(() => {
-    if (isEnabled) {
+    if (isEnabled && !isClickingInProgress) {
       location.reload();
     }
   }, intervalMs);
@@ -165,79 +180,169 @@ const stopPageRefresh = () => {
 };
 
 /**
- * Перевіряє стан товару та виконує необхідні дії
+ * Зберігає статуси товарів в storage
  */
-const checkProduct = () => {
-  try {
-    if (!currentFilterText || currentFilterText.trim() === "") {
-      return;
-    }
+const saveStatusesToStorage = (items) => {
+  chrome.storage.local.set({ productStatuses: items });
+};
 
-    const searchText = currentFilterText.trim();
+/**
+ * Чекає поки клас clicked зникне з будь-якої кнопки кошика (polling кожні 50мс)
+ */
+const waitForClickedToDisappear = () => {
+  return new Promise((resolve) => {
+    const check = () => {
+      const clickedBtn = document.querySelector(
+        ".main-basked-icon.add2cart.clicked"
+      );
+      if (!clickedBtn) {
+        resolve();
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    setTimeout(check, 50);
+  });
+};
+
+/**
+ * Перевіряє всі товари зі списку та клікає доступні по черзі
+ */
+const checkProducts = async () => {
+  if (filterTexts.length === 0 || isClickingInProgress) return;
+
+  try {
     const products = document.querySelectorAll(".product");
 
-    let targetProduct = null;
-    const normalizedSearchText = searchText.replace(/\s+/g, " ");
-
+    // Будуємо Map: назва товару → DOM елемент
+    const productMap = new Map();
     products.forEach((product) => {
-      const modelElement = product.querySelector(".model_product");
-      if (!modelElement) return;
-
-      const productName = modelElement.textContent.trim().replace(/\s+/g, " ");
-
-      if (productName === normalizedSearchText) {
-        targetProduct = product;
-      }
+      const modelEl = product.querySelector(".model_product");
+      if (!modelEl) return;
+      const name = modelEl.textContent.trim().replace(/\s+/g, " ");
+      productMap.set(name, product);
     });
 
-    if (!targetProduct) {
-      console.log("Товар не знайдено. Очікування refresh...");
+    const toClick = []; // знайдені з доступною кнопкою
+    const notFound = []; // відсутні в DOM (і не кліковані раніше)
+    const itemStatuses = []; // поточний стан для storage і попапу
+
+    for (const text of filterTexts) {
+      // Якщо вже клікали раніше — зберігаємо статус "clicked"
+      if (persistedStatuses[text] === "clicked") {
+        itemStatuses.push({ name: text, status: "clicked" });
+        continue;
+      }
+
+      const normalized = text.trim().replace(/\s+/g, " ");
+      const productEl = productMap.get(normalized);
+
+      if (!productEl) {
+        notFound.push(text);
+        itemStatuses.push({ name: text, status: "not_found" });
+        continue;
+      }
+
+      const button = productEl.querySelector(".main-basked-icon");
+      if (!button || button.classList.contains("gray") || button.classList.contains("clicked")) {
+        itemStatuses.push({ name: text, status: "searching" });
+        continue;
+      }
+
+      toClick.push({ text, button });
+      itemStatuses.push({ name: text, status: "searching" });
+    }
+
+    // Зберігаємо поточний стан і повідомляємо попап
+    saveStatusesToStorage(itemStatuses);
+
+    if (toClick.length === 0) {
       notifyPopup({
         status: "searching",
-        message: "Шукаю товар на сторінці...",
+        message:
+          notFound.length > 0
+            ? `Шукаю товари на сторінці... (не знайдено: ${notFound.length})`
+            : "Шукаю товари на сторінці...",
+        items: itemStatuses,
       });
       return;
     }
 
-    console.log("Товар знайдено:", searchText);
-
-    const button = targetProduct.querySelector(".main-basked-icon");
-    if (!button) {
-      console.log("Кнопка не знайдена");
-      notifyPopup({
-        status: "error",
-        message: "Товар знайдено, але кнопка відсутня",
-      });
-      return;
-    }
-
-    if (
-      button.classList.contains("gray") ||
-      button.classList.contains("clicked")
-    ) {
-      console.log("Товар знайдено, але кнопка недоступна. Очікування...");
-      notifyPopup({
-        status: "waiting",
-        message: "Товар знайдено! Очікую доступності товару...",
-      });
-      return;
-    }
-
-    console.log("Товар знайдено, зупиняю refresh...");
-    isEnabled = false;
+    // Є що клікати — зупиняємо refresh
+    isClickingInProgress = true;
+    cancelClicking = false;
     stopPageRefresh();
 
-    console.log("Клікаю на кнопку додавання...");
-    button.click();
+    for (let i = 0; i < toClick.length; i++) {
+      if (cancelClicking) break;
 
-    chrome.storage.local.set({ toggleEnabled: false }, () => {
+      const { text, button } = toClick[i];
+      button.click();
+
+      // Оновлюємо персистентний стан
+      persistedStatuses[text] = "clicked";
+
+      // Формуємо актуальний список статусів
+      const currentItems = filterTexts.map((t) => {
+        if (persistedStatuses[t] === "clicked") return { name: t, status: "clicked" };
+        const normalized = t.trim().replace(/\s+/g, " ");
+        if (!productMap.has(normalized)) return { name: t, status: "not_found" };
+        return { name: t, status: "searching" };
+      });
+
+      saveStatusesToStorage(currentItems);
+      notifyPopup({
+        status: "clicking",
+        message: `Клікнуто: ${text}`,
+        items: currentItems,
+      });
+
+      // Чекаємо поки clicked зникне перед наступним кліком
+      if (i < toClick.length - 1) {
+        await waitForClickedToDisappear();
+      }
+    }
+
+    isClickingInProgress = false;
+
+    if (cancelClicking) return;
+
+    // Перевіряємо чи всі товари вже клікнуто
+    const allDone = filterTexts.every((t) => persistedStatuses[t] === "clicked");
+
+    if (allDone) {
+      const finalItems = filterTexts.map((t) => ({ name: t, status: "clicked" }));
+      saveStatusesToStorage(finalItems);
+      chrome.storage.local.set({ toggleEnabled: false });
+      isEnabled = false;
+
       notifyPopup({
         status: "completed",
-        message: "Клік виконано! Товар додається до кошика.",
+        message: "Всі товари додано до кошика!",
+        items: finalItems,
       });
-    });
+    } else {
+      // Є незнайдені — продовжуємо refresh
+      const finalItems = filterTexts.map((t) => {
+        if (persistedStatuses[t] === "clicked") return { name: t, status: "clicked" };
+        if (notFound.includes(t)) return { name: t, status: "not_found" };
+        return { name: t, status: "searching" };
+      });
+
+      saveStatusesToStorage(finalItems);
+      notifyPopup({
+        status: "searching",
+        message: "Деякі товари не знайдено, продовжую пошук...",
+        items: finalItems,
+      });
+
+      chrome.storage.local.get("refreshIntervalMs", (data) => {
+        startPageRefresh(data.refreshIntervalMs || 1210);
+      });
+    }
   } catch (error) {
-    console.error("Помилка при перевірці товару:", error);
+    isClickingInProgress = false;
+    console.error("Помилка при перевірці товарів:", error);
   }
 };
 
@@ -253,6 +358,7 @@ const checkProductPage = () => {
       notifyPopup({
         status: "waiting",
         message: "Очікую появи кнопки «Купити»...",
+        items: [],
       });
       return;
     }
@@ -266,6 +372,7 @@ const checkProductPage = () => {
       notifyPopup({
         status: "completed",
         message: "Клік виконано! Товар додається до кошика.",
+        items: [],
       });
     });
   } catch (error) {
@@ -282,6 +389,7 @@ const notifyPopup = (data) => {
       action: "statusUpdate",
       status: data.status,
       message: data.message,
+      items: data.items || [],
     });
   } catch (error) {
     // Popup може бути закритий - це нормально

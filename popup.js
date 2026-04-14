@@ -1,6 +1,7 @@
 // Popup script для управління автоматичним додаванням товарів
 
 let pageMode = "catalog"; // "catalog" | "product"
+let filterItemsData = [""]; // масив назв товарів (мін 1, макс 5)
 
 const isCatalogOrMainUrl = (url) => {
   try {
@@ -13,11 +14,11 @@ const isCatalogOrMainUrl = (url) => {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  const filterInput = document.getElementById("filterInput");
   const refreshIntervalInput = document.getElementById("refreshIntervalInput");
   const scheduledTimeInput = document.getElementById("scheduledTimeInput");
   const clearScheduledTimeBtn = document.getElementById("clearScheduledTime");
   const autoToggle = document.getElementById("autoToggle");
+  const addFilterBtn = document.getElementById("addFilterBtn");
 
   // Перевіряємо чи користувач на правильній сторінці
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -27,11 +28,11 @@ document.addEventListener("DOMContentLoaded", () => {
       showError(
         "Будь ласка, відкрийте сторінку каталогу NBU (coins.bank.gov.ua)"
       );
-      filterInput.disabled = true;
       refreshIntervalInput.disabled = true;
       scheduledTimeInput.disabled = true;
       clearScheduledTimeBtn.disabled = true;
       autoToggle.disabled = true;
+      addFilterBtn.disabled = true;
       return;
     }
 
@@ -43,8 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSettings();
   });
 
-  filterInput.addEventListener("input", handleFilterChange);
-  filterInput.addEventListener("keydown", handleKeyDown);
+  addFilterBtn.addEventListener("click", addFilterItem);
   refreshIntervalInput.addEventListener("change", handleRefreshIntervalChange);
   scheduledTimeInput.addEventListener("change", handleScheduledTimeChange);
   clearScheduledTimeBtn.addEventListener("click", handleClearScheduledTime);
@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Слухаємо повідомлення від content script
   chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "statusUpdate") {
-      updateTrackingStatus(request.status, request.message);
+      updateTrackingStatus(request.status, request.message, request.items || []);
     }
   });
 
@@ -68,20 +68,130 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /**
+ * Рендерить список інпутів для товарів
+ */
+const renderFilterList = () => {
+  const list = document.getElementById("filterList");
+  const addBtn = document.getElementById("addFilterBtn");
+  if (!list) return;
+
+  list.innerHTML = "";
+
+  filterItemsData.forEach((text, index) => {
+    const item = document.createElement("div");
+    item.className = "filter-item";
+
+    // Кружечок статусу
+    const dot = document.createElement("span");
+    dot.className = "status-dot";
+    dot.id = `statusDot${index}`;
+
+    // Інпут
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "text-input filter-input";
+    input.placeholder = "Введіть точну назву товару";
+    input.value = text;
+    input.setAttribute("aria-label", `Товар ${index + 1}`);
+    input.addEventListener("input", () => handleFilterItemChange(index, input.value));
+    input.addEventListener("keydown", handleKeyDown);
+
+    // Кнопка видалення
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "remove-product-btn";
+    removeBtn.title = "Видалити товар";
+    removeBtn.textContent = "×";
+    removeBtn.style.visibility = filterItemsData.length === 1 ? "hidden" : "visible";
+    removeBtn.addEventListener("click", () => removeFilterItem(index));
+
+    item.appendChild(dot);
+    item.appendChild(input);
+    item.appendChild(removeBtn);
+    list.appendChild(item);
+  });
+
+  if (addBtn) {
+    addBtn.style.display = filterItemsData.length >= 5 ? "none" : "";
+  }
+};
+
+/**
+ * Обробник зміни тексту одного товару
+ */
+const handleFilterItemChange = (index, value) => {
+  filterItemsData[index] = value;
+  saveFilterTexts();
+};
+
+/**
+ * Додає новий інпут для товару
+ */
+const addFilterItem = () => {
+  if (filterItemsData.length >= 5) return;
+  filterItemsData.push("");
+  saveFilterTexts();
+  renderFilterList();
+};
+
+/**
+ * Видаляє інпут товару за індексом
+ */
+const removeFilterItem = (index) => {
+  if (filterItemsData.length <= 1) return;
+  filterItemsData.splice(index, 1);
+  saveFilterTexts();
+  renderFilterList();
+};
+
+/**
+ * Зберігає масив назв товарів в storage
+ */
+const saveFilterTexts = () => {
+  chrome.storage.local.set({ filterTexts: filterItemsData });
+};
+
+/**
+ * Оновлює статусний кружечок конкретного товару
+ */
+const updateItemStatus = (name, status) => {
+  const index = filterItemsData.findIndex(
+    (t) => t.trim().replace(/\s+/g, " ") === name.trim().replace(/\s+/g, " ")
+  );
+  if (index === -1) return;
+
+  const dot = document.getElementById(`statusDot${index}`);
+  if (!dot) return;
+
+  dot.className = "status-dot";
+  dot.textContent = "";
+
+  if (status === "clicked") {
+    dot.classList.add("done");
+    dot.textContent = "✓";
+  } else if (status === "not_found") {
+    dot.classList.add("not-found");
+    dot.textContent = "✕";
+  }
+};
+
+/**
  * Завантажує збережені налаштування
  */
 const loadSettings = () => {
   chrome.storage.local.get(
-    ["toggleEnabled", "filterText", "refreshIntervalMs", "scheduledTime"],
+    ["toggleEnabled", "filterTexts", "productStatuses", "refreshIntervalMs", "scheduledTime"],
     (data) => {
-      const filterInput = document.getElementById("filterInput");
       const refreshIntervalInput = document.getElementById("refreshIntervalInput");
       const scheduledTimeInput = document.getElementById("scheduledTimeInput");
       const autoToggle = document.getElementById("autoToggle");
 
-      if (data.filterText) {
-        filterInput.value = data.filterText;
+      // Завантажуємо список товарів (ігноруємо старий filterText)
+      if (data.filterTexts && data.filterTexts.length > 0) {
+        filterItemsData = data.filterTexts;
+      } else {
+        filterItemsData = [""];
       }
+      renderFilterList();
 
       refreshIntervalInput.value = data.refreshIntervalMs || 1210;
 
@@ -94,13 +204,24 @@ const loadSettings = () => {
         }
       }
 
-      // Toggle увімкнений або є активний scheduled time → показуємо як увімкнений
       const hasActiveSchedule =
         data.scheduledTime && new Date(data.scheduledTime) > new Date();
 
       if (data.toggleEnabled || hasActiveSchedule) {
         autoToggle.checked = true;
         updateStatusIndicator(true, data.scheduledTime && !data.toggleEnabled ? data.scheduledTime : null);
+
+        // Відновлюємо статуси з storage
+        if (data.productStatuses && data.productStatuses.length > 0) {
+          const allClicked = data.productStatuses.every((i) => i.status === "clicked");
+          const overallStatus = allClicked ? "completed" : "searching";
+          const overallMessage = allClicked
+            ? "Всі товари додано до кошика!"
+            : "Шукаю товари на сторінці...";
+          updateTrackingStatus(overallStatus, overallMessage, data.productStatuses);
+        } else if (data.toggleEnabled) {
+          updateTrackingStatus("searching", "Шукаю товари на сторінці...", []);
+        }
       } else {
         autoToggle.checked = false;
         updateStatusIndicator(false);
@@ -114,30 +235,36 @@ const loadSettings = () => {
  */
 const handleToggleChange = (event) => {
   const isChecked = event.target.checked;
-  const filterInput = document.getElementById("filterInput");
-  const filterText = filterInput.value.trim();
 
-  if (isChecked && pageMode === "catalog" && filterText === "") {
-    event.target.checked = false;
-    showError("Спочатку введіть текст для пошуку товарів");
-    filterInput.focus();
-    return;
+  if (isChecked && pageMode === "catalog") {
+    const hasText = filterItemsData.some((t) => t.trim() !== "");
+    if (!hasText) {
+      event.target.checked = false;
+      showError("Спочатку введіть назву хоча б одного товару");
+      return;
+    }
   }
 
   if (!isChecked) {
-    // Вимикаємо — скасовуємо і моніторинг, і scheduled time
     const scheduledTimeInput = document.getElementById("scheduledTimeInput");
     scheduledTimeInput.value = "";
-    chrome.storage.local.remove("scheduledTime");
+    chrome.storage.local.remove(["scheduledTime", "productStatuses"]);
     chrome.storage.local.set({ toggleEnabled: false }, () => {
       updateStatusIndicator(false);
       hideTrackingStatus();
+      clearAllStatusDots();
       showStatus("⏸️ Відстеження зупинено");
     });
     return;
   }
 
-  // Вмикаємо — перевіряємо чи є запланований час
+  // Скидаємо статуси всіх товарів на "searching"
+  const resetStatuses = filterItemsData
+    .filter((t) => t.trim())
+    .map((t) => ({ name: t.trim(), status: "searching" }));
+  chrome.storage.local.set({ productStatuses: resetStatuses });
+  clearAllStatusDots();
+
   const scheduledTimeInput = document.getElementById("scheduledTimeInput");
   const scheduledTimeValue = scheduledTimeInput.value;
 
@@ -150,23 +277,32 @@ const handleToggleChange = (event) => {
       chrome.storage.local.remove("scheduledTime");
       return;
     }
-    // Зберігаємо час → content.js підхопить і встановить таймер
     chrome.storage.local.set({ scheduledTime: scheduledTimeValue }, () => {
       updateStatusIndicator(true, scheduledTimeValue);
     });
   } else {
-    // Старт одразу
     chrome.storage.local.set({ toggleEnabled: true }, () => {
       updateStatusIndicator(true);
-      showStatus("🚀 Розпочато відстеження товару");
+      showStatus("🚀 Розпочато відстеження товарів");
     });
   }
 };
 
 /**
+ * Скидає всі статусні кружечки
+ */
+const clearAllStatusDots = () => {
+  filterItemsData.forEach((_, index) => {
+    const dot = document.getElementById(`statusDot${index}`);
+    if (dot) {
+      dot.className = "status-dot";
+      dot.textContent = "";
+    }
+  });
+};
+
+/**
  * Оновлює індикатор статусу
- * @param {boolean} isEnabled
- * @param {string|null} scheduledTime — якщо є, показує "Заплановано о HH:MM:SS"
  */
 const updateStatusIndicator = (isEnabled, scheduledTime = null) => {
   const statusIndicator = document.getElementById("statusIndicator");
@@ -192,27 +328,14 @@ const updateStatusIndicator = (isEnabled, scheduledTime = null) => {
 };
 
 /**
- * Обробник зміни тексту фільтру
- */
-const handleFilterChange = (event) => {
-  const filterText = event.target.value;
-  chrome.storage.local.set({ filterText }, () => {
-    if (filterText.trim() === "") {
-      showStatus("Введіть текст для пошуку товарів");
-    } else {
-      hideStatus();
-    }
-  });
-};
-
-/**
  * Обробник Enter у полі фільтру
  */
 const handleKeyDown = (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     const autoToggle = document.getElementById("autoToggle");
-    if (!autoToggle.checked && event.target.value.trim() !== "") {
+    const hasText = filterItemsData.some((t) => t.trim() !== "");
+    if (!autoToggle.checked && hasText) {
       autoToggle.checked = true;
       handleToggleChange({ target: autoToggle });
     }
@@ -231,7 +354,7 @@ const handleRefreshIntervalChange = (event) => {
 };
 
 /**
- * Обробник зміни запланованого часу (тільки валідація, без збереження в storage)
+ * Обробник зміни запланованого часу
  */
 const handleScheduledTimeChange = (event) => {
   const value = event.target.value;
@@ -251,7 +374,6 @@ const handleClearScheduledTime = () => {
   const autoToggle = document.getElementById("autoToggle");
   scheduledTimeInput.value = "";
   chrome.storage.local.remove("scheduledTime");
-  // Якщо toggle увімкнений але лише через scheduled time — вимикаємо
   if (autoToggle.checked) {
     chrome.storage.local.get("toggleEnabled", (data) => {
       if (!data.toggleEnabled) {
@@ -295,9 +417,9 @@ const showError = (message) => {
 };
 
 /**
- * Оновлює статус відстеження товару
+ * Оновлює статус відстеження товарів
  */
-const updateTrackingStatus = (status, message) => {
+const updateTrackingStatus = (status, message, items = []) => {
   const trackingStatus = document.getElementById("trackingStatus");
   const statusIcon = document.getElementById("statusIcon");
   const statusDescription = document.getElementById("statusDescription");
@@ -306,7 +428,7 @@ const updateTrackingStatus = (status, message) => {
 
   const icons = {
     searching: "🔍",
-    clicked: "👆",
+    clicking: "👆",
     waiting: "⏳",
     completed: "✅",
     error: "❌",
@@ -314,6 +436,11 @@ const updateTrackingStatus = (status, message) => {
 
   statusIcon.textContent = icons[status] || "🔍";
   statusDescription.textContent = message;
+
+  // Оновлюємо статус кожного товару
+  items.forEach((item) => {
+    updateItemStatus(item.name, item.status);
+  });
 
   if (status === "completed") {
     const autoToggle = document.getElementById("autoToggle");

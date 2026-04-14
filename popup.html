@@ -16,11 +16,11 @@
     </div>
 
     <div class="content">
-      <!-- Текстове поле для фільтру -->
+      <!-- Список товарів для відстеження -->
       <div id="filterGroup" class="input-group">
-        <label for="filterInput" class="input-label">Назва товару для відстеження:</label>
-        <input type="text" id="filterInput" class="text-input" placeholder="Введіть точну назву товару"
-          aria-label="Назва товару для відстеження">
+        <label class="input-label">Назви товарів для відстеження:</label>
+        <div id="filterList" class="filter-list"></div>
+        <button id="addFilterBtn" class="add-product-btn" title="Додати товар">+ Додати товар</button>
       </div>
 
       <!-- Інтервал оновлення сторінки -->
@@ -77,7 +77,7 @@
 
     <div class="footer">
       <p class="footer-text">
-        Відстежує один товар за точною назвою<br>
+        Відстежує до 5 товарів за точною назвою<br>
         Працює тільки на coins.bank.gov.ua
       </p>
     </div>
